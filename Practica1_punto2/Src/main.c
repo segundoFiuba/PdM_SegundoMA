@@ -71,25 +71,27 @@ int main(void)
     int ascending = 1;
     int BSP_PB_Last_State = 0;
     int BSP_PB_Current_State = 0;
+    int size_array = 3;
+    Led_TypeDef leds[] = {LED1,LED2,LED3};
 
 	/* Infinite loop */
 	while (1)
 	{
-	  BSP_LED_Toggle(LED_num);
+	  BSP_LED_Toggle(leds[LED_num]);
 
 	  HAL_Delay(200);
 	  BSP_PB_Current_State = BSP_PB_GetState(BUTTON_USER);
 	  ascending = BSP_PB_Current_State && !BSP_PB_Last_State ? !ascending : ascending;
 	  BSP_PB_Last_State = BSP_PB_Current_State;
 
-	  BSP_LED_Toggle(LED_num);
+	  BSP_LED_Toggle(leds[LED_num]);
 
 	  HAL_Delay(200);
 	  BSP_PB_Current_State = BSP_PB_GetState(BUTTON_USER);
 	  ascending = BSP_PB_Current_State && !BSP_PB_Last_State ? !ascending : ascending;
 	  BSP_PB_Last_State = BSP_PB_Current_State;
 
-	  LED_num = ascending ? (LED_num+1)%3 : (3+LED_num-1)%3;
+	  LED_num = ascending ? (LED_num+1)%size_array : (3+LED_num-1)%size_array;
 	}
 }
 
