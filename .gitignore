@@ -51,3 +51,6 @@ Module.symvers
 Mkfile.old
 dkms.conf
 /.metadata/
+.metadata/
+**/.metadata/*
+**/metadata/*
