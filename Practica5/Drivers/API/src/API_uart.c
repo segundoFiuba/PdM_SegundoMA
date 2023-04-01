@@ -11,7 +11,14 @@ static UART_HandleTypeDef UartHandle;
 #define USARTx                           USART3
 
 
-
+/**
+ * Inicializar la UART
+ *
+ * Inicializa la UART con los parámetros por defecto y envía por serial la configuración inicial.
+ *
+ * @fn bool_t uartInit()
+ * @return true si se inicializó bien
+ */
 bool_t uartInit(){
 	/*##-1- Configure the UART peripheral ######################################*/
 	  /* Put the USART peripheral in the Asynchronous mode (UART Mode) */
@@ -51,18 +58,53 @@ bool_t uartInit(){
 	  return true;
 
 }
+
+/**
+ * @fn void uartSendString(uint8_t*)
+ * Envía string por uart
+ *
+ * La función chequea si el puntero al string no es nulo,
+ * y luego lo envía usando la función de la HAL, calculando el
+ * tamaño del string con strlen()
+ *
+ * @param pstring puntero al string, que debe terminar con \0
+ */
 void uartSendString(uint8_t * pstring){
 
 	assert(pstring != NULL);
 	HAL_UART_Transmit(&UartHandle, pstring, strlen(pstring), 0xFFFF);
 
 }
+
+/**
+ * @fn void uartSendStringSize(uint8_t*, uint16_t)
+ * Envía string por uart con el tamaño especificado
+ *
+ * La función chequea si el puntero al string no es nulo y si
+ * el tamaño no es cero, luego usa la función de la HAL para enviarlo.
+ *
+ *
+ * @param pstring puntero al string que se desea enviar
+ * @param size tamaño del string que se desa enviar
+ */
 void uartSendStringSize(uint8_t * pstring, uint16_t size){
 	assert(pstring != NULL);
 	assert(size!=0);
 	HAL_UART_Transmit(&UartHandle, pstring, size, 0xFFFF);
 
 }
+
+/**
+ * @fn void uartReceiveStringSize(uint8_t*, uint16_t)
+ * Recibe el string por UART
+ *
+ * La función chequea si el puntero del buffer no es nulo y si el tamaño no es cero.
+ * Si se cumple, llama a la función de la HAL para almacenar los datos recibidos
+ * en el buffer.
+ *
+ * @param pstring puntero al buffer de datos donde se almacena el string
+ * @param size tamaño del string que se recibe
+ */
 void uartReceiveStringSize(uint8_t * pstring, uint16_t size){
 	assert(pstring != NULL);
 	assert(size!=0);
