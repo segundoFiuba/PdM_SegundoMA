@@ -12,14 +12,28 @@ static bool_t pressed = false;		//Variable si el boton se presiono
 static delay_t delayFSM;
 
 
-//Inicializa la maquina de estados con boton en alto, inicializaliza el pulsador
+/**
+ *Inicializa la MEF del debounce
+ *
+ *Inicializa la maquina de estados con boton en alto, inicializaliza el pulsador
+ *
+ * @returns
+ */
 void debounceFSM_init() {
 	debounce = BUTTON_UP;
 	BSP_PB_Init(BUTTON_USER, BUTTON_MODE_GPIO);
 	delayInit(&delayFSM, FSM_UPDATE_PERIOD);
 }
 
-//Implementacion de maquina de estados, se debe checkear periodicamente
+
+/**
+ * Implementación de la MEF
+ *
+ * Chequea los cuatro estados, y si se encuentra en estado de transición
+ * y se cumplió el tiempo de delay cambia al próixmo estado.
+ *
+ * @returns
+ */
 void debounceFSM_update() {
 	switch (debounce) {
 	case BUTTON_UP:
@@ -55,6 +69,10 @@ void debounceFSM_update() {
 }
 
 //Funcion intermeria para acceder interna pressed
+/**
+ * @fn bool_t readKey()
+ * @return true si se encuentra presionado
+ */
 bool_t readKey() {
 	if (pressed){
 		pressed=false;

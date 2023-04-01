@@ -84,7 +84,13 @@ int main(void) {
 
 }
 
-//Inicializa la maquina de estados con boton en alto, inicializaliza el pulsador
+/**
+ *Inicializa la MEF del debounce
+ *
+ *Inicializa la maquina de estados con boton en alto, inicializaliza el pulsador
+ *
+ * @returns
+ */
 void debounceFSM_init() {
 	debounce = BUTTON_UP;
 	BSP_PB_Init(BUTTON_USER, BUTTON_MODE_GPIO);
@@ -92,6 +98,14 @@ void debounceFSM_init() {
 }
 
 //Implementacion de maquina de estados, se debe checkear periodicamente
+/**
+ * Implementación de la MEF
+ *
+ * Chequea los cuatro estados, y si se encuentra en estado de transición
+ * y se cumplió el tiempo de delay cambia al próixmo estado.
+ *
+ * @returns
+ */
 void debounceFSM_update() {
 	switch (debounce) {
 	case BUTTON_UP:
@@ -127,10 +141,20 @@ void debounceFSM_update() {
 	}
 }
 
+/**
+ * Toggles LED when button pressed
+ *
+ * @returns
+ */
 void buttonPressed(){
 	BSP_LED_Toggle(LED1);
 }
 
+/**
+ * Toggles LED when button released
+ *
+ * @returns
+ */
 void buttonReleased(){
 	BSP_LED_Toggle(LED3);
 }
