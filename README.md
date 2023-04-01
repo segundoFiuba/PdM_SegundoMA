@@ -4,4 +4,4 @@
 
 Autor: Segundo Molina Abeniacar
 
-El repositorio contiene los trabajos prácticos de la materia Programación de Microcontroladores. Más información en la [https://sites.google.com/cursoscapse.com/pdm/](página oficial de la materia)
+El repositorio contiene los trabajos prácticos de la materia Programación de Microcontroladores. Más información en la [página oficial de la materia](https://sites.google.com/cursoscapse.com/pdm/)
