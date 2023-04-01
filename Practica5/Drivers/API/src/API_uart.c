@@ -9,6 +9,7 @@
 
 static UART_HandleTypeDef UartHandle;
 #define USARTx                           USART3
+#define BAUD_RATE 9600
 
 
 /**
@@ -31,7 +32,7 @@ bool_t uartInit(){
 	      - Hardware flow control disabled (RTS and CTS signals) */
 	  UartHandle.Instance        = USARTx;
 
-	  UartHandle.Init.BaudRate   = 9600;
+	  UartHandle.Init.BaudRate   = BAUD_RATE;
 	  UartHandle.Init.WordLength = UART_WORDLENGTH_8B;
 	  UartHandle.Init.StopBits   = UART_STOPBITS_1;
 	  UartHandle.Init.Parity     = UART_PARITY_ODD;
