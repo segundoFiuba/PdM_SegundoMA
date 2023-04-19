@@ -47,6 +47,7 @@ static uint8_t command_inListPassiveTarget [] = {0x00,0x00,0xFF, //Preamble
 		0xE1, //DCS TFI+CMDN=X00
 		0x00
 };
+
 static uint8_t command_inDataExchange [] = {0x00,0x00,0xFF, //Preamble
 		0x05, //LEN
 		0xFB, //LCS (LEN+LCS=X00)
@@ -54,8 +55,43 @@ static uint8_t command_inDataExchange [] = {0x00,0x00,0xFF, //Preamble
 		0x40, //CMD
 		0x01,
 		0x30,
+		0x05,
+		0xB6, //DCS TFI+CMDN=X00
+		0x00
+};
+
+static uint8_t command_auth1 [] = {0x00,0x00,0xFF, //Preamble
+		0x0F, //LEN
+		0xF1, //LCS (LEN+LCS=X00)
+		0xD4, //TFI
+		0x40, //CMD
+		0x01,
+		0x61,
+		0x05,
+		0xFF,
+		0xFF,
+		0xFF,
+		0xFF,
+		0xFF,
+		0xFF,
+		0xB3,
+		0x2B,
+		0x2B,
+		0x94,
+		0xEE, //DCS TFI+CMDN=X00
+		0x00
+};
+
+static uint8_t command_configureTiming [] = {0x00,0x00,0xFF, //Preamble
+		0x06, //LEN
+		0xFA, //LCS (LEN+LCS=X00)
+		0xD4, //TFI
+		0x32, //CMD
+		0x02,
 		0x00,
-		0xBA, //DCS TFI+CMDN=X00
+		0x0B,
+		0x0D,
+		0xE0, //DCS TFI+CMDN=X00
 		0x00
 };
 
@@ -74,6 +110,7 @@ static uint8_t firmware_response_code[2] = {0xD5, 0x03};
 static uint8_t SAM_configure_response_code[2] = {0xD5, 0x15};
 static uint8_t inListPassiveTarget_response_code[2] = {0xD5, 0x4B};
 static uint8_t inDataExchange_response_code[2] = {0xD5, 0x41};
+static uint8_t configTiming_response_code[2] = {0xD5, 0x33};
 
 bool get_pn532Driver_initialized(){
 	return pn532Driver_initialized;
@@ -111,7 +148,7 @@ static bool receive_ACK(){
 
 PN532_response_t pn532Driver_I2C_getFirmware(PN532_firmware_t* firmware){
 
-	uint8_t* responseBuffer[LENGTH_OF_FIRMWARE_RESPONSE+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE+LENGTH_OF_POSTAMBLE];
+	uint8_t responseBuffer[LENGTH_OF_FIRMWARE_RESPONSE+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE+LENGTH_OF_POSTAMBLE];
 
 	if(!pn532Driver_I2C_portNucleo_sendCommand(commandGetFirmware, sizeof(commandGetFirmware), pn532_address)){
 		return PN532_CMD_ERROR;
@@ -207,9 +244,57 @@ PN532_response_t pn532Driver_I2C_listPassiveTarget(PN532_target_t * target){
 
 PN532_response_t pn532Driver_I2C_readMifareData(uint8_t* buffer, uint8_t len, PN532_target_t target){
 
-	uint8_t* responseBuffer[100];
+	uint8_t responseBuffer[100]={0x00};
+
+	if(!pn532Driver_I2C_portNucleo_sendCommand(command_auth1, sizeof(command_auth1), pn532_address)){
+		return PN532_CMD_ERROR;
+	}
+
+	portNucleo_Delay(1);
+
+	if(!receive_ACK()){
+		return PN532_ACK_NOT_RECEIVED;
+	}
+
+	portNucleo_Delay(10);
+
+	if(!pn532Driver_I2C_portNucleo_receiveToBuffer(responseBuffer, sizeof(responseBuffer), pn532_address)){
+		return PN532_RESPONSE_ERROR;
+	}
 
 	if(!pn532Driver_I2C_portNucleo_sendCommand(command_inDataExchange, sizeof(command_inDataExchange), pn532_address)){
+		return PN532_CMD_ERROR;
+	}
+
+	portNucleo_Delay(1);
+
+	if(!receive_ACK()){
+		return PN532_ACK_NOT_RECEIVED;
+	}
+
+	portNucleo_Delay(200);
+
+	if(!pn532Driver_I2C_portNucleo_receiveToBuffer(responseBuffer, sizeof(responseBuffer), pn532_address)){
+		return PN532_RESPONSE_ERROR;
+	}
+	if(!arrays_equal(preamble, responseBuffer, LENGTH_OF_PREAMBLE)
+			|| !arrays_equal(inDataExchange_response_code, responseBuffer+(LENGTH_LEN_LCS+LENGTH_OF_PREAMBLE)*sizeof(uint8_t), LENGTH_OF_FIRMWARE_RESPONSE_CODE)) {
+		return PN532_RESPONSE_ERROR;
+	}
+
+	for(int i = 0; i<len-LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE; i++){
+		buffer[i] = responseBuffer[LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE+i];
+	}
+
+	return PN532_OK;
+
+}
+
+PN532_response_t pn532Driver_I2C_configureTiming(){
+
+	uint8_t responseBuffer[100]={0x00};
+
+	if(!pn532Driver_I2C_portNucleo_sendCommand(command_configureTiming, sizeof(command_configureTiming), pn532_address)){
 		return PN532_CMD_ERROR;
 	}
 
@@ -225,13 +310,10 @@ PN532_response_t pn532Driver_I2C_readMifareData(uint8_t* buffer, uint8_t len, PN
 		return PN532_RESPONSE_ERROR;
 	}
 	if(!arrays_equal(preamble, responseBuffer, LENGTH_OF_PREAMBLE)
-			|| !arrays_equal(inDataExchange_response_code, responseBuffer+(LENGTH_LEN_LCS+LENGTH_OF_PREAMBLE)*sizeof(uint8_t), LENGTH_OF_FIRMWARE_RESPONSE_CODE)) {
+			|| !arrays_equal(configTiming_response_code, responseBuffer+(LENGTH_LEN_LCS+LENGTH_OF_PREAMBLE)*sizeof(uint8_t), LENGTH_OF_FIRMWARE_RESPONSE_CODE)) {
 		return PN532_RESPONSE_ERROR;
 	}
 
-	for(int i = 0; i<len-LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE; i++){
-		buffer[i] = responseBuffer[LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE+i];
-	}
 
 	return PN532_OK;
 

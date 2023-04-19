@@ -76,9 +76,9 @@ int main(void) {
 	PN532_firmware_t firmwareBuffer;
 	res = pn532Driver_I2C_getFirmware(&firmwareBuffer);
 	switch(res) {
-		case PN532_CMD_ERROR: uartSendString("CMD ERROR \n"); break;
-		case PN532_ACK_NOT_RECEIVED: uartSendString("ACK ERROR \n"); break;
-		case PN532_RESPONSE_ERROR: uartSendString("RESPONSE ERROR \n"); break;
+		case PN532_CMD_ERROR: uartSendString("FW CMD ERROR \n"); break;
+		case PN532_ACK_NOT_RECEIVED: uartSendString("FW ACK ERROR \n"); break;
+		case PN532_RESPONSE_ERROR: uartSendString("FW RESPONSE ERROR \n"); break;
 		case PN532_OK: {
 			char firmware_string[50];
 			sprintf(firmware_string, "Firmware- IC: %02X , ver: %02X, rev: %02X, supp: %02X \n", firmwareBuffer.IC,firmwareBuffer.version,firmwareBuffer.revision,firmwareBuffer.support);
@@ -90,21 +90,29 @@ int main(void) {
 	HAL_Delay(10);
 	res = pn532Driver_I2C_configureSAM();
 	switch(res) {
-		case PN532_CMD_ERROR: uartSendString("CMD ERROR \n"); break;
-		case PN532_ACK_NOT_RECEIVED: uartSendString("ACK ERROR \n"); break;
-		case PN532_RESPONSE_ERROR: uartSendString("RESPONSE ERROR \n"); break;
+		case PN532_CMD_ERROR: uartSendString("SAM CMD ERROR \n"); break;
+		case PN532_ACK_NOT_RECEIVED: uartSendString("SAM ACK ERROR \n"); break;
+		case PN532_RESPONSE_ERROR: uartSendString("SAM RESPONSE ERROR \n"); break;
 		case PN532_OK: uartSendString("SAM SUCCESFULLY CONFIGURED \n"); break;
-		default: uartSendString("UNKNOWN ERROR"); break;
+		default: uartSendString("SAM UNKNOWN ERROR"); break;
 	}
 	HAL_Delay(10);
+	res = pn532Driver_I2C_configureTiming();
+	switch(res) {
+		case PN532_CMD_ERROR: uartSendString("TIME CMD ERROR \n"); break;
+		case PN532_ACK_NOT_RECEIVED: uartSendString("TIME ACK ERROR \n"); break;
+		case PN532_RESPONSE_ERROR: uartSendString("TIME RESPONSE ERROR \n"); break;
+		case PN532_OK: uartSendString("TIME SUCCESFULLY CONFIGURED \n"); break;
+		default: uartSendString("TIME UNKNOWN ERROR"); break;
+	}
 	/* Infinite loop */
 	PN532_target_t targetBuffer;
 	while (1) {
 		res = pn532Driver_I2C_listPassiveTarget(&targetBuffer);
 		switch(res) {
-			case PN532_CMD_ERROR: uartSendString("CMD ERROR \n"); break;
-			case PN532_ACK_NOT_RECEIVED: uartSendString("ACK ERROR \n"); break;
-			case PN532_RESPONSE_ERROR: uartSendString("RESPONSE ERROR \n"); break;
+			case PN532_CMD_ERROR: uartSendString("LIST CMD ERROR \n"); break;
+			case PN532_ACK_NOT_RECEIVED: uartSendString("LIST ACK ERROR \n"); break;
+			case PN532_RESPONSE_ERROR: uartSendString("LIST RESPONSE ERROR \n"); break;
 			case PN532_EMPTY: uartSendString("."); break;
 			case PN532_OK: {
 				uartSendString("\nCARD FOUND\n");
@@ -122,16 +130,19 @@ int main(void) {
 						);
 				uartSendString(target_string);
 				uint8_t dataBuffer[100];
-				HAL_Delay(1);
+				HAL_Delay(10);
 				res = pn532Driver_I2C_readMifareData(dataBuffer, sizeof(dataBuffer), targetBuffer);
 				switch(res){
 				case PN532_OK: uartSendString(hex_string(dataBuffer, sizeof(dataBuffer))); break;
-				default: uartSendString("ERROR"); break;
+				case PN532_ACK_NOT_RECEIVED: uartSendString("READ ACK ERROR \n"); break;
+				case PN532_RESPONSE_ERROR: uartSendString("READ RESPONSE ERROR \n"); break;
+				case PN532_EMPTY: uartSendString("."); break;
+				default: uartSendString("READ UNKNOWN ERROR"); break;
 				}
 
 				break;
 			}
-			default: uartSendString("UNKNOWN ERROR"); break;
+			default: uartSendString("LIST UNKNOWN ERROR"); break;
 		}
 		HAL_Delay(1000);
 
