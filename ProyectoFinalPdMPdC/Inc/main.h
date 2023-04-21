@@ -51,6 +51,19 @@
 /* Exported macro ------------------------------------------------------------*/
 /* Exported functions ------------------------------------------------------- */
 
+
+typedef enum {
+	FSM_INIT,
+	FSM_READ_FIRMWARE_PN532,
+	FSM_CONFIGURE_PN532,
+	FSM_READY_TO_READ_FULL,
+	FSM_READ_FULL_CARD,
+	FSM_READY_TO_READ_SPECIFIC,
+	FSM_READ_SPECIFIC,
+	FSM_DEINIT,
+	FSM_ERROR
+} fsm_state_t;
+
 #endif /* __MAIN_H */
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

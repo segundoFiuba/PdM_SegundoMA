@@ -16,7 +16,7 @@
 void debounceFSM_init();
 void debounceFSM_update();
 
-bool readKey();
+bool read_button();
 
 typedef enum{
 BUTTON_UP,

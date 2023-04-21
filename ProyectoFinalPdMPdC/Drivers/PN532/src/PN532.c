@@ -9,6 +9,7 @@
 #define LENGTH_OF_ACK_FRAME 7
 #define LENGTH_OF_PREAMBLE 4
 #define LENGTH_OF_FIRMWARE_RESPONSE_CODE 2
+#define LENGTH_OF_DATA_RESPONSE_CODE 3
 #define LENGTH_OF_FIRMWARE_RESPONSE 4
 #define LENGTH_OF_SAM_CONFIGURE_RESPONSE_CODE 2
 #define LENGTH_OF_INLISTPASSIVETARGET_RESPONSE_CODE 2
@@ -18,7 +19,14 @@
 static uint8_t pn532_address = 0x24<<1;
 static bool pn532Driver_initialized=false;
 static bool searchingTarget=false;
-static const uint8_t commandGetFirmware[] = {0x00, 0x00, 0xFF, //Preamble
+static bool card_found=false;
+static PN532_target_t found_target;
+
+typedef struct {
+	uint8_t command[60];
+	uint8_t len;
+} command_t;
+static const uint8_t command_get_firmware[] = {0x00, 0x00, 0xFF, //Preamble
 		0x02, //(LEN) Length of msg (D4+cmd)
 		0xFE, //(LCS) Checksum: LEN+LCS = X00
 		0xD4, //(TFI) From Host to PN532
@@ -103,7 +111,6 @@ static bool arrays_equal(uint8_t* arr1, uint8_t* arr2, uint8_t len) {
     }
     return true;
 }
-
 static const uint8_t pn532AckFrame[7]={0x01,0x00,0x00,0xFF,0x00,0xFF,0x00};
 static uint8_t preamble[4] = {0x01, 0x00, 0x00, 0xFF};
 static uint8_t firmware_response_code[2] = {0xD5, 0x03};
@@ -111,27 +118,41 @@ static uint8_t SAM_configure_response_code[2] = {0xD5, 0x15};
 static uint8_t inListPassiveTarget_response_code[2] = {0xD5, 0x4B};
 static uint8_t inDataExchange_response_code[2] = {0xD5, 0x41};
 static uint8_t configTiming_response_code[2] = {0xD5, 0x33};
+static command_t pn532Driver_I2C_createCommand(uint8_t * input_command, uint8_t len);
+static uint8_t calculate_lcs(uint8_t length);
+static uint8_t calculate_DCS(uint8_t *data, uint8_t len);
 
-bool get_pn532Driver_initialized(){
+
+bool pn532_get_pn532Driver_initialized(){
 	return pn532Driver_initialized;
 }
 
-uint8_t get_pn532_address(){
+uint8_t pn532_get_pn532_address(){
 	return pn532_address;
 }
 
-void set_pn532_address(uint8_t address){
+void pn532_set_pn532_address(uint8_t address){
 	pn532_address = address;
 }
 
+bool pn532_get_card_found(){
+	return card_found;
+}
+
 bool pn532Driver_I2C_init(){
-	pn532Driver_I2C_portNucleo_init();
-	pn532Driver_initialized=true;
+	if(pn532Driver_I2C_portNucleo_init()){
+		pn532Driver_initialized=true;
+		return true;
+	}
+	return false;
 }
 
 bool pn532Driver_I2C_deinit(){
-	pn532Driver_I2C_portNucleo_deinit();
-	pn532Driver_initialized=false;
+	if(pn532Driver_I2C_portNucleo_deinit()){
+		pn532Driver_initialized=false;
+		return true;
+	}
+	return false;
 }
 
 static bool receive_ACK(){
@@ -147,10 +168,14 @@ static bool receive_ACK(){
 }
 
 PN532_response_t pn532Driver_I2C_getFirmware(PN532_firmware_t* firmware){
+	if(firmware ==  NULL) return PN532_PARAM_ERROR;
 
 	uint8_t responseBuffer[LENGTH_OF_FIRMWARE_RESPONSE+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE+LENGTH_OF_POSTAMBLE];
 
-	if(!pn532Driver_I2C_portNucleo_sendCommand(commandGetFirmware, sizeof(commandGetFirmware), pn532_address)){
+	uint8_t command1[2] = {0xD4, 0x02};
+	command_t test_command_get_firmware = pn532Driver_I2C_createCommand(command1, 2);
+
+	if(!pn532Driver_I2C_portNucleo_sendCommand(command_get_firmware, sizeof(command_get_firmware) , pn532_address)){
 		return PN532_CMD_ERROR;
 	}
 
@@ -182,7 +207,14 @@ PN532_response_t pn532Driver_I2C_configureSAM(){
 
 	uint8_t responseBuffer[9];
 
-	if(!pn532Driver_I2C_portNucleo_sendCommand(command_configure_SAM, sizeof(command_configure_SAM), pn532_address)){
+	uint8_t command1[5] = {0xD4, //TFI
+			0x14, //CMD
+			0x01, //
+			0x03, //
+			0x00,};
+	command_t test_command_configure = pn532Driver_I2C_createCommand(command1, 5);
+
+	if(!pn532Driver_I2C_portNucleo_sendCommand(command_configure_SAM, command_configure_SAM, pn532_address)){
 		return PN532_CMD_ERROR;
 	}
 	portNucleo_Delay(1);
@@ -204,8 +236,15 @@ PN532_response_t pn532Driver_I2C_configureSAM(){
 }
 
 PN532_response_t pn532Driver_I2C_listPassiveTarget(PN532_target_t * target){
+	if(target==NULL) return PN532_PARAM_ERROR;
 
 	uint8_t responseBuffer[20];
+
+	uint8_t command1[4] = {0xD4, //TFI
+			0x4A, //CMD
+			0x01, //
+			0x00,};
+	command_t test_command_list = pn532Driver_I2C_createCommand(command1, 4);
 
 	if(!searchingTarget){
 		if(!pn532Driver_I2C_portNucleo_sendCommand(command_inListPassiveTarget, sizeof(command_inListPassiveTarget), pn532_address)){
@@ -229,17 +268,31 @@ PN532_response_t pn532Driver_I2C_listPassiveTarget(PN532_target_t * target){
 		return PN532_EMPTY;
 	}
 
-	target->logical_number = responseBuffer[1+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
-	target->SENS_RES[0] = responseBuffer[2+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
-	target->SENS_RES[1] = responseBuffer[3+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
-	target->SEL_RES = responseBuffer[4+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
-	target->NFCID_length = responseBuffer[5+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
-	target->NFCID[0] = responseBuffer[6+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
-	target->NFCID[1] = responseBuffer[7+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
-	target->NFCID[2] = responseBuffer[8+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
-	target->NFCID[3] = responseBuffer[9+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
+	found_target.logical_number = responseBuffer[1+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
+	found_target.SENS_RES[0] = responseBuffer[2+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
+	found_target.SENS_RES[1] = responseBuffer[3+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
+	found_target.SEL_RES = responseBuffer[4+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
+	found_target.NFCID_length = responseBuffer[5+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
+	found_target.NFCID[0] = responseBuffer[6+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
+	found_target.NFCID[1] = responseBuffer[7+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
+	found_target.NFCID[2] = responseBuffer[8+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
+	found_target.NFCID[3] = responseBuffer[9+LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE];
+	target->logical_number = found_target.logical_number;
+	target->SENS_RES[0] = found_target.SENS_RES[0];
+	target->SENS_RES[1] = found_target.SENS_RES[1];
+	target->SEL_RES = found_target.SEL_RES;
+	target->NFCID_length = found_target.NFCID_length;
+	target->NFCID[0] = found_target.NFCID[0];
+	target->NFCID[1] = found_target.NFCID[1];
+	target->NFCID[2] = found_target.NFCID[2];
+	target->NFCID[3] = found_target.NFCID[3];
+	card_found=true;
 	searchingTarget=false;
 	return PN532_OK;
+}
+PN532_response_t pn532Driver_I2C_readMifareData_sans_target(uint8_t* buffer, uint8_t len){	card_found=false;
+	card_found=false;
+	return pn532Driver_I2C_readMifareData(buffer, len, found_target);
 }
 
 PN532_response_t pn532Driver_I2C_readMifareData(uint8_t* buffer, uint8_t len, PN532_target_t target){
@@ -272,7 +325,7 @@ PN532_response_t pn532Driver_I2C_readMifareData(uint8_t* buffer, uint8_t len, PN
 		return PN532_ACK_NOT_RECEIVED;
 	}
 
-	portNucleo_Delay(200);
+	portNucleo_Delay(10);
 
 	if(!pn532Driver_I2C_portNucleo_receiveToBuffer(responseBuffer, sizeof(responseBuffer), pn532_address)){
 		return PN532_RESPONSE_ERROR;
@@ -282,10 +335,64 @@ PN532_response_t pn532Driver_I2C_readMifareData(uint8_t* buffer, uint8_t len, PN
 		return PN532_RESPONSE_ERROR;
 	}
 
-	for(int i = 0; i<len-LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE; i++){
-		buffer[i] = responseBuffer[LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_FIRMWARE_RESPONSE_CODE+i];
+	for(int i = 0; i<len; i++){
+		buffer[i] = responseBuffer[LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_DATA_RESPONSE_CODE+i];
 	}
 
+	return PN532_OK;
+
+}
+
+PN532_response_t pn532Driver_I2C_readMifareData_full(uint8_t* buffer, uint8_t len){
+
+	uint8_t responseBuffer[100]={0x00};
+
+	for(int i =0x00; i<0xBB; i++){
+		command_auth1[0x09]=i;
+		command_auth1[0x14]=0xF3-i;
+
+		if(!pn532Driver_I2C_portNucleo_sendCommand(command_auth1, sizeof(command_auth1), pn532_address)){
+				return PN532_OK;
+			}
+
+			portNucleo_Delay(10);
+
+			if(!receive_ACK()){
+				return PN532_OK;
+			}
+
+			portNucleo_Delay(10);
+
+			if(!pn532Driver_I2C_portNucleo_receiveToBuffer(responseBuffer, sizeof(responseBuffer), pn532_address)){
+				return PN532_OK;
+			}
+
+			command_inDataExchange[9]=i;
+			command_inDataExchange[10]=0xBB-i;
+			if(!pn532Driver_I2C_portNucleo_sendCommand(command_inDataExchange, sizeof(command_inDataExchange), pn532_address)){
+				return PN532_OK;
+			}
+
+			portNucleo_Delay(10);
+
+			if(!receive_ACK()){
+				return PN532_OK;
+			}
+
+			portNucleo_Delay(10);
+
+			if(!pn532Driver_I2C_portNucleo_receiveToBuffer(responseBuffer, sizeof(responseBuffer), pn532_address)){
+				return PN532_OK;
+			}
+			if(!arrays_equal(preamble, responseBuffer, LENGTH_OF_PREAMBLE)
+					|| !arrays_equal(inDataExchange_response_code, responseBuffer+(LENGTH_LEN_LCS+LENGTH_OF_PREAMBLE)*sizeof(uint8_t), LENGTH_OF_FIRMWARE_RESPONSE_CODE)) {
+				return PN532_OK;
+			}
+
+			for(int j = 0; j<16; j++){
+				buffer[i*16+j] = responseBuffer[LENGTH_OF_PREAMBLE+LENGTH_LEN_LCS+LENGTH_OF_DATA_RESPONSE_CODE+j];
+			}
+	}
 	return PN532_OK;
 
 }
@@ -317,5 +424,40 @@ PN532_response_t pn532Driver_I2C_configureTiming(){
 
 	return PN532_OK;
 
+}
+
+static command_t pn532Driver_I2C_createCommand(uint8_t * input_command, uint8_t len){
+	command_t output_command;
+	output_command.command[0] = 0x00;
+	output_command.command[1] = 0x00;
+	output_command.command[2] = 0xFF;
+	output_command.command[3] = len;
+	output_command.command[4] = calculate_lcs(len);
+	for(int i = 0; i<len;i++){
+		output_command.command[5+i] = input_command[i];
+	}
+	output_command.command[5+len] = calculate_DCS(input_command, len);
+	output_command.command[6+len] = 0x00;
+
+	output_command.len = len+7;
+
+	return output_command;
+}
+
+static uint8_t calculate_lcs(uint8_t length) {
+    return ~(length-1) & 0xFF;
+}
+
+static uint8_t calculate_DCS(uint8_t *data, uint8_t len) {
+    uint8_t dcs = 0xFF;
+    for (int i = 0; i < len; i++) {
+        uint16_t sum = dcs + data[i];
+        if (sum > 0xFF) {
+            sum -= 0xFF;
+            sum--;
+        }
+        dcs = sum;
+    }
+    return ~(dcs-1);
 }
 

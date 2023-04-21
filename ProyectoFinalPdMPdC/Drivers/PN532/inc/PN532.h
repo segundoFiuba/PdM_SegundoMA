@@ -38,13 +38,14 @@ typedef struct{
 } PN532_target_t;
 
 bool pn532Driver_I2C_init();
+bool pn532_get_card_found();
+bool pn532_get_pn532Driver_initialized();
 PN532_response_t pn532Driver_I2C_getFirmware(PN532_firmware_t* firmware);
 PN532_response_t pn532Driver_I2C_configureSAM();
 PN532_response_t pn532Driver_I2C_listPassiveTarget(PN532_target_t* target);
 PN532_response_t pn532Driver_I2C_readMifareData(uint8_t* buffer, uint8_t len, PN532_target_t target);
-
-
-
+PN532_response_t pn532Driver_I2C_readMifareData_sans_target(uint8_t* buffer, uint8_t len);
+PN532_response_t pn532Driver_I2C_readMifareData_full(uint8_t* buffer, uint8_t len);
 
 
 #endif /* PN532_INC_PN532_H_ */

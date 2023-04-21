@@ -29,12 +29,9 @@
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
-#define LED_PERIOD_1 100
-#define LED_PERIOD_2 500
 
-#define FSM_UPDATE_PERIOD 40
-
-#define LED_TOGGLE LED_BLUE
+#define FSM_UPDATE_PERIOD 10
+#define DEBUG
 /* Private variables ---------------------------------------------------------*/
 /* UART handler declaration */
 UART_HandleTypeDef UartHandle;
@@ -44,6 +41,16 @@ UART_HandleTypeDef UartHandle;
 static void SystemClock_Config(void);
 static void Error_Handler(void);
 static char* hex_string(uint8_t *array, size_t length);
+static void fsm_update();
+static void fsm_init();
+static void LOG(char*);
+static void configure_pn532();
+static void read_firmware_pn532();
+static void init_read_pn532();
+static void read_full_card();
+static void read_specific_block();
+fsm_state_t fsm_state;
+
 
 /* Private functions ---------------------------------------------------------*/
 
@@ -63,102 +70,216 @@ int main(void) {
 	 - Set NVIC Group Priority to 4
 	 - Low Level Initialization
 	 */
-	PN532_response_t res;
 	HAL_Init();
-
-	/* Configure the system clock to 180 MHz */
 	SystemClock_Config();
 
-	uartInit();
+	delay_t delayFSM;
 
-	uartSendString(pn532Driver_I2C_init()? "Init Success \n" : "Init Failure \n");
+	delayInit(&delayFSM, FSM_UPDATE_PERIOD);
+	fsm_init();
 
+	while(true){
+		if (delayRead(&delayFSM)) {	//Acciones al cumplir el periodo de interrupción
+			fsm_update();
+		}
+	}
+}
+
+static void fsm_update(){
+	switch(fsm_state) {
+	case FSM_INIT: {
+		LOG("[FSM_INIT]\n");
+		fsm_init();
+		fsm_state = FSM_READ_FIRMWARE_PN532;
+		break;
+	}
+	case FSM_READ_FIRMWARE_PN532: {
+		LOG("[FSM_READ_FIRMWARE_PN532]\n");
+		read_firmware_pn532();
+		fsm_state=FSM_CONFIGURE_PN532;
+		break;
+	}
+	case FSM_CONFIGURE_PN532: {
+		LOG("[FSM_CONFIGURE_PN532]\n");
+		configure_pn532();
+		fsm_state = FSM_READY_TO_READ_FULL;
+	}
+	case FSM_READY_TO_READ_FULL: {
+		//LOG("[FSM_READY_TO_READ_FULL]\n");
+		if(read_button()){
+			fsm_state = FSM_READY_TO_READ_SPECIFIC;
+			break;
+		}
+		if (pn532_get_card_found()){
+			fsm_state = FSM_READ_FULL_CARD;
+			break;
+		}
+		init_read_pn532();
+		break;
+	}
+	case FSM_READ_FULL_CARD: {
+		LOG("[FSM_READ_FULL_CARD]\n");
+		read_full_card();
+		fsm_state=FSM_READY_TO_READ_FULL;
+		break;
+	}
+	case FSM_READY_TO_READ_SPECIFIC: {
+		LOG("[FSM_READY_TO_READ_SPECIFIC]\n");
+		if(read_button()){
+			fsm_state = FSM_READY_TO_READ_FULL;
+			break;
+		} else if (pn532_get_card_found()){
+			fsm_state = FSM_READ_SPECIFIC;
+			break;
+		}
+		init_read_pn532();
+		break;
+	}
+	case FSM_READ_SPECIFIC: {
+		LOG("[FSM_READ_SPECIFIC]\n");
+		read_specific_block();
+		fsm_state=FSM_READY_TO_READ_SPECIFIC;
+		break;
+	}
+	case FSM_DEINIT: LOG("[FSM_DEINIT]\n");break;
+	case FSM_ERROR:
+		LOG("[FSM_ERROR]\n");
+		fsm_state=FSM_INIT;
+		break;
+	default: {
+		LOG("[default]\n");
+		fsm_state= FSM_ERROR;
+		break;
+	}
+	}
+}
+
+
+static void fsm_init(){
+	if(!uartInit()){
+		LOG("[UART_INIT_ERROR]\n");
+	}
+	if(!pn532_get_pn532Driver_initialized()){
+		if(!pn532Driver_I2C_init()){
+			LOG("[I2C_INIT_ERROR]\n");
+		}
+	}
+	fsm_state=FSM_READ_FIRMWARE_PN532;
+}
+
+static void read_firmware_pn532(){
+	PN532_response_t res;
 	PN532_firmware_t firmwareBuffer;
 	res = pn532Driver_I2C_getFirmware(&firmwareBuffer);
 	switch(res) {
-		case PN532_CMD_ERROR: uartSendString("FW CMD ERROR \n"); break;
-		case PN532_ACK_NOT_RECEIVED: uartSendString("FW ACK ERROR \n"); break;
-		case PN532_RESPONSE_ERROR: uartSendString("FW RESPONSE ERROR \n"); break;
+		case PN532_CMD_ERROR: LOG("FW CMD ERROR \n"); break;
+		case PN532_ACK_NOT_RECEIVED: LOG("FW ACK ERROR \n"); break;
+		case PN532_RESPONSE_ERROR: LOG("FW RESPONSE ERROR \n"); break;
 		case PN532_OK: {
 			char firmware_string[50];
 			sprintf(firmware_string, "Firmware- IC: %02X , ver: %02X, rev: %02X, supp: %02X \n", firmwareBuffer.IC,firmwareBuffer.version,firmwareBuffer.revision,firmwareBuffer.support);
-			uartSendString(firmware_string);
+			LOG(firmware_string);
 			break;
 		}
-		default: uartSendString("UNKNOWN ERROR");
+		default: LOG("UNKNOWN ERROR");
 	}
-	HAL_Delay(10);
+}
+
+static void configure_pn532(){
+	PN532_response_t res;
 	res = pn532Driver_I2C_configureSAM();
 	switch(res) {
-		case PN532_CMD_ERROR: uartSendString("SAM CMD ERROR \n"); break;
-		case PN532_ACK_NOT_RECEIVED: uartSendString("SAM ACK ERROR \n"); break;
-		case PN532_RESPONSE_ERROR: uartSendString("SAM RESPONSE ERROR \n"); break;
-		case PN532_OK: uartSendString("SAM SUCCESFULLY CONFIGURED \n"); break;
-		default: uartSendString("SAM UNKNOWN ERROR"); break;
+		case PN532_CMD_ERROR: LOG("SAM CMD ERROR \n"); break;
+		case PN532_ACK_NOT_RECEIVED: LOG("SAM ACK ERROR \n"); break;
+		case PN532_RESPONSE_ERROR: LOG("SAM RESPONSE ERROR \n"); break;
+		case PN532_OK: LOG("SAM SUCCESFULLY CONFIGURED \n"); break;
+		default: LOG("SAM UNKNOWN ERROR"); break;
 	}
 	HAL_Delay(10);
 	res = pn532Driver_I2C_configureTiming();
 	switch(res) {
-		case PN532_CMD_ERROR: uartSendString("TIME CMD ERROR \n"); break;
-		case PN532_ACK_NOT_RECEIVED: uartSendString("TIME ACK ERROR \n"); break;
-		case PN532_RESPONSE_ERROR: uartSendString("TIME RESPONSE ERROR \n"); break;
-		case PN532_OK: uartSendString("TIME SUCCESFULLY CONFIGURED \n"); break;
-		default: uartSendString("TIME UNKNOWN ERROR"); break;
+		case PN532_CMD_ERROR: LOG("TIME CMD ERROR \n"); break;
+		case PN532_ACK_NOT_RECEIVED: LOG("TIME ACK ERROR \n"); break;
+		case PN532_RESPONSE_ERROR: LOG("TIME RESPONSE ERROR \n"); break;
+		case PN532_OK: LOG("TIME SUCCESFULLY CONFIGURED \n"); break;
+		default: LOG("TIME UNKNOWN ERROR"); break;
 	}
-	/* Infinite loop */
+}
+
+static void init_read_pn532(){
+	PN532_response_t res;
 	PN532_target_t targetBuffer;
-	while (1) {
-		res = pn532Driver_I2C_listPassiveTarget(&targetBuffer);
-		switch(res) {
-			case PN532_CMD_ERROR: uartSendString("LIST CMD ERROR \n"); break;
-			case PN532_ACK_NOT_RECEIVED: uartSendString("LIST ACK ERROR \n"); break;
-			case PN532_RESPONSE_ERROR: uartSendString("LIST RESPONSE ERROR \n"); break;
-			case PN532_EMPTY: uartSendString("."); break;
-			case PN532_OK: {
-				uartSendString("\nCARD FOUND\n");
-				char target_string[50];
-				sprintf(target_string, "Target- ln: %02X , SENS_RES: %02X %02X, SEL_RES: %02X, NFCID_Length: %02X, NFCID: %02X %02X %02X %02X \n",
-						targetBuffer.logical_number,
-						targetBuffer.SENS_RES[0],
-						targetBuffer.SENS_RES[1],
-						targetBuffer.SEL_RES,
-						targetBuffer.NFCID_length,
-						targetBuffer.NFCID[0],
-						targetBuffer.NFCID[1],
-						targetBuffer.NFCID[2],
-						targetBuffer.NFCID[3]
-						);
-				uartSendString(target_string);
-				uint8_t dataBuffer[100];
-				HAL_Delay(10);
-				res = pn532Driver_I2C_readMifareData(dataBuffer, sizeof(dataBuffer), targetBuffer);
-				switch(res){
-				case PN532_OK: uartSendString(hex_string(dataBuffer, sizeof(dataBuffer))); break;
-				case PN532_ACK_NOT_RECEIVED: uartSendString("READ ACK ERROR \n"); break;
-				case PN532_RESPONSE_ERROR: uartSendString("READ RESPONSE ERROR \n"); break;
-				case PN532_EMPTY: uartSendString("."); break;
-				default: uartSendString("READ UNKNOWN ERROR"); break;
-				}
-
-				break;
-			}
-			default: uartSendString("LIST UNKNOWN ERROR"); break;
+	res = pn532Driver_I2C_listPassiveTarget(&targetBuffer);
+	switch(res) {
+		case PN532_CMD_ERROR: LOG("LIST CMD ERROR \n"); break;
+		case PN532_ACK_NOT_RECEIVED: LOG("LIST ACK ERROR \n"); break;
+		case PN532_RESPONSE_ERROR: LOG("LIST RESPONSE ERROR \n"); break;
+		case PN532_EMPTY: LOG("."); break;
+		case PN532_OK: {
+			LOG("\nCARD FOUND\n");
+			char target_string[100];
+			sprintf(target_string, "Target- ln: %02X , SENS_RES: %02X %02X, SEL_RES: %02X, NFCID_Length: %02X, NFCID: %02X %02X %02X %02X \n",
+					targetBuffer.logical_number,
+					targetBuffer.SENS_RES[0],
+					targetBuffer.SENS_RES[1],
+					targetBuffer.SEL_RES,
+					targetBuffer.NFCID_length,
+					targetBuffer.NFCID[0],
+					targetBuffer.NFCID[1],
+					targetBuffer.NFCID[2],
+					targetBuffer.NFCID[3]
+					);
+			LOG(target_string);
+			fsm_state=FSM_READ_FULL_CARD;
+			break;
 		}
-		HAL_Delay(1000);
-
+		default: LOG("LIST UNKNOWN ERROR"); break;
 	}
-
+}
+static void read_full_card(){
+	PN532_response_t res;
+	uint8_t dataBuffer[1024];
+	res = pn532Driver_I2C_readMifareData_full(dataBuffer, sizeof(dataBuffer));
+	switch(res){
+		case PN532_OK: LOG(hex_string(dataBuffer, sizeof(dataBuffer))); break;
+		case PN532_ACK_NOT_RECEIVED: LOG("READ ACK ERROR \n"); break;
+		case PN532_RESPONSE_ERROR: LOG("READ RESPONSE ERROR \n"); break;
+		case PN532_EMPTY: LOG("."); break;
+		default: LOG("READ UNKNOWN ERROR"); break;
+	}
 }
 
-static char* hex_string(uint8_t *array, size_t length) {
-    char *result = (char*)malloc(length*3+1); // Allocate space for the string
-    for (size_t i = 0; i < length; i++) {
-        sprintf(result+i*3, "%02X ", array[i]); // Format the hex value and store it in the string
+static void read_specific_block(){
+	PN532_response_t res;
+	uint8_t dataBuffer[100];
+	res = pn532Driver_I2C_readMifareData_sans_target(dataBuffer, sizeof(dataBuffer));
+	switch(res){
+		case PN532_OK: LOG(hex_string(dataBuffer, sizeof(dataBuffer))); break;
+		case PN532_ACK_NOT_RECEIVED: LOG("READ ACK ERROR \n"); break;
+		case PN532_RESPONSE_ERROR: LOG("READ RESPONSE ERROR \n"); break;
+		case PN532_EMPTY: LOG("."); break;
+		default: LOG("READ UNKNOWN ERROR"); break;
+	}
+}
+char* hex_string(uint8_t *array, size_t length) {
+    char *output = malloc(length * 3 + (length / 16) + 1); // allocate space for hex string and newlines
+    size_t i, j = 0;
+    for (i = 0; i < length; i++) {
+        if (i % 16 == 0 && i != 0) { // add newline every 16th item
+            output[j++] = '\n';
+        }
+        sprintf(&output[j], "%02x ", array[i]); // convert byte to hex string
+        j += 3; // move index to next hex string position
     }
-    result[length*3] = '\0'; // Add null-terminator to the end of the string
-    return result;
+    output[j] = '\0'; // null-terminate the string
+    return output;
 }
 
+static void LOG(char* string){
+#ifdef DEBUG
+	uartSendString(string);
+#endif
+}
 /**
  * @brief  System Clock Configuration
  *         The system Clock is configured as follow :

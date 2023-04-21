@@ -52,7 +52,7 @@ void debounceFSM_update() {
 }
 
 //Funcion intermeria para acceder interna pressed
-bool_t readKey() {
+bool_t read_button() {
 	if (pressed){
 		pressed=false;
 		return true;
